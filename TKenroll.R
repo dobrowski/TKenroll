@@ -89,6 +89,15 @@ enrollment.sum.old <- enrollment.sum %>%
 zip.births.mry2  <- zip.births.mry %>%
     left_join(enrollment.sum.old)
 
+lm.model <- zip.births.mry2 %>%
+    group_by(NAME_LEA21) %>%
+    nest() %>%
+    mutate(lm_obj =  map(data, ~lm(k.tot~babies, data = .x))) %>%
+    mutate(prediction = map2(lm_obj, data, function(.lm, .data) predict(.lm, .data) )) %>%
+    unnest(cols = c(data, prediction)) 
+           
+
+
 #  TK files https://www.cde.ca.gov/ds/ad/filestkdata.asp
 
 TK <- tbl(con, "TK") %>%
@@ -128,7 +137,8 @@ enrollment.sum.19 = enrollment.sum %>%
 
 joint <- left_join(TK2, enrollment.sum.19, by = c("Name" = "DISTRICT")
                    ) %>%
-    group_by(Name) %>%
+    left_join(lm.model) %>%
+#    group_by(Name) %>%
     mutate(est.tk20.gr1enr = round2(pull(mry.4.proj[(mry.4.proj$name == 2020),"perc.of.2019"])*gr1.tot*as.numeric(mdy("12/2/2016") - mdy("9/2/2016"))/365, 0 ), 
            est.tk23.gr1enr = round2(pull(mry.4.proj[(mry.4.proj$name == 2023),"perc.of.2019"])*gr1.tot*as.numeric(mdy("2/2/2018") - mdy("9/2/2017"))/365, 0 ), 
            est.tk24.gr1enr = round2(pull(mry.4.proj[(mry.4.proj$name == 2024),"perc.of.2019"])*gr1.tot*as.numeric(mdy("4/2/2019") - mdy("9/2/2018"))/365, 0 ),
@@ -137,18 +147,19 @@ joint <- left_join(TK2, enrollment.sum.19, by = c("Name" = "DISTRICT")
     )  %>%
     arrange(Name) %>%
     mutate(
-        est.tk23.mean = mean(c(est.tk23.gr1enr,est.tk23.TKactual)),
+        est.tk23.mean = round2( mean(c(est.tk23.gr1enr,est.tk23.TKactual)),0 ) ,
         est.tk23.teachers = ceiling( est.tk23.mean/12 )
         
-    )
+    )# %>%
+#    ungroup()
 
-
+joint2 <- left_join(joint,lm.model)
 
 
 ss <- "https://docs.google.com/spreadsheets/d/1p5EPFn9zkZGClmYPFC09cin8QzBFS5ZVa9y0O5GO84c/edit#gid=1739770238"
 
 write_sheet(joint, ss = ss)
-
+write_rds(joint,here("TKestimates","joint.rds"))
 
 #  Total population changes 
 #  Preschool enrollment
