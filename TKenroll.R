@@ -224,7 +224,7 @@ joint <- lm.model %>%
            est.tk23.county = round2(pull(mry.4.proj[(mry.4.proj$name == 2023),"perc.of.2019"])*gr1.tot*as.numeric(mdy("2/2/2018") - mdy("9/2/2017"))/365, 0 ), 
            est.tk24.county = round2(pull(mry.4.proj[(mry.4.proj$name == 2024),"perc.of.2019"])*gr1.tot*as.numeric(mdy("4/2/2019") - mdy("9/2/2018"))/365, 0 ),
            est.tk25.county = round2(pull(mry.4.proj[(mry.4.proj$name == 2025),"perc.of.2019"])*gr1.tot*as.numeric(mdy("6/2/2019") - mdy("9/2/2018"))/365, 0 ),
-           est.tk23.TKactual = round2(pull(mry.4.proj[(mry.4.proj$name == 2020),"perc.of.2019"])* Kindergarten_TK_Program_Participation_Census_Day* as.numeric(mdy("2/2/2018") - mdy("9/2/2017")) / as.numeric(mdy("12/2/2016") - mdy("9/2/2016")),0 ),
+           est.tk23.TKactual = round2(pull(mry.4.proj[(mry.4.proj$name == 2023),"perc.of.2019"])* Kindergarten_TK_Program_Participation_Census_Day* as.numeric(mdy("2/2/2018") - mdy("9/2/2017")) / as.numeric(mdy("12/2/2016") - mdy("9/2/2016")),0 ),
            est.tk23.zip = round2(prediction2023*as.numeric(mdy("2/2/2018") - mdy("9/2/2017"))/365, 0 ), 
            )  %>%
     mutate(

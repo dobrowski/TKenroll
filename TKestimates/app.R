@@ -97,10 +97,10 @@ server <- function(input, output) {
     output$sentence2 <- renderText({
         joint2 <- jointInput()
         
-        paste0("The best estimate used is the average of three estimates.  One estimate is based on the actual number of 2019-20 TK students (",
+        paste0("The best estimate used is the average of three estimates.  One estimate is based on the actual number of 2019-20 TK students and changes in county population projections (",
                joint2 %>%
                    select(est.tk23.TKactual) ,
-               "), a second estimate is based on changes in county population projections (",
+               "), a second estimate is based on 2020-21 first grade cohorts and changes in county population projections (",
                joint2 %>%
                    select(est.tk23.county) ,
                ") and a third estimate is based on the number of births in zip codes associated with the LEA (",
