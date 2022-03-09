@@ -7,6 +7,7 @@ library(googlesheets4)
 library(lubridate)
 library(readxl)
 library(ggthemes)
+library(googlesheets4)
 
 con <- MCOE::mcoe_sql_con()
 
@@ -35,8 +36,12 @@ mry.4.proj <- pop.4.proj %>%
     filter(County == "Monterey County",
            Age == 4) %>%
     pivot_longer(cols = `2010`:`2060`) %>%
-    mutate(perc.of.2019 = value/6366)
+    mutate(perc.of.2019 = value/6366,
+          year.of.birth = as.numeric(name) - 4)
 
+mry.4.proj.slim <- mry.4.proj %>%
+  select(year.of.birth,
+         county.4yo.2019.perc = perc.of.2019)
 
 ### Births ----
 # https://data.chhs.ca.gov/dataset/cdph_live-birth-by-zip-code
@@ -85,11 +90,13 @@ TK <- tbl(con, "TK") %>%
            Reporting_Level == "District",
            Race =="All",
            Gender == "All",
-           Subgroup == "All") %>%
+         #  Subgroup == "All"
+           ) %>%
     collect() 
 
 TK2 <- TK %>%
-    filter( str_starts(CDS_Code,"27")
+    filter( str_starts(CDS_Code,"27"),
+            Subgroup == "ALL"
     ) %>%
     select(Year, Name, Total_Kindergarten_Enrollment_Census_Day, Kindergarten_TK_Program_Participation_Census_Day) %>%
     mutate(k_without_TK = Total_Kindergarten_Enrollment_Census_Day - Kindergarten_TK_Program_Participation_Census_Day)
@@ -125,7 +132,6 @@ joiner <- TK2 %>%
     full_join(zip.births.mry) %>%
     select(-Name)
 
-# 
 # 
 # enrollment.sum.old <- enrollment.sum %>%
 #     mutate(year.of.birth = as.numeric(YEAR) + 1995,
@@ -184,6 +190,44 @@ lm.predicts <- lm.model %>%
     mutate(Year = "2019-20")
 
 
+lm.multi <- lm.model %>%
+  mutate(year.of.kinder = paste0(year.of.birth + 5,"-", year.of.birth + 6 -2000)  ) %>%
+  select(NAME_LEA21, short.name, year.of.birth, year.of.kinder, babies, Total_Kindergarten_Enrollment_Census_Day:k_without_TK, prediction)
+
+to.join.multi <- enrollment.sum %>%
+  filter(# YEAR == 20,
+         !str_detect(DISTRICT,"Education"),
+         !str_detect(DISTRICT,"High")) %>%
+  transmute(year.of.kinder = as.numeric(YEAR) + 2000,
+         year.of.first = as.numeric(YEAR) + 2001,
+            short.name = str_sub(DISTRICT ,1,6),
+         k.tot = k.tot,
+            gr1.tot = gr1.tot
+  )
+
+meta <- to.join.multi %>%
+  left_join(to.join.multi, by = c("year.of.first" = "year.of.kinder", "short.name" = "short.name")) %>%
+  mutate(year.of.kinder = paste0(year.of.kinder,"-", year.of.kinder + 1 -2000) ,
+         year.of.first = paste0(year.of.first,"-", year.of.first + 1 -2000)  ) %>%
+  select(short.name, year.of.kinder, year.of.first, k.tot = k.tot.x, gr1.tot = gr1.tot.y)
+
+
+latest.TK.slim <- lm.multi %>%
+  select(NAME_LEA21, year.of.birth, Kindergarten_TK_Program_Participation_Census_Day) %>% 
+  filter(!is.na(Kindergarten_TK_Program_Participation_Census_Day)) %>%
+  group_by(NAME_LEA21) %>%
+  filter(year.of.birth == max(year.of.birth)) %>%
+  ungroup() %>%
+  select(NAME_LEA21, latest.tk.tot = Kindergarten_TK_Program_Participation_Census_Day)
+
+
+
+multi.meta <- lm.multi %>%
+  left_join(meta)
+
+
+
+
 ###
 # 
 # joint <- left_join(TK2, enrollment.sum.19, by = c("Name" = "DISTRICT")
@@ -215,7 +259,17 @@ enrollment.sum.20 <- enrollment.sum %>%
            short.name = str_sub(DISTRICT ,1,6),
            gr1.tot = gr1.tot
     )
+
+
+enrollment.sum.20.slim <- enrollment.sum.20 %>%
+  ungroup() %>%
+  select(short.name, 
+         latest.1gr.tot = gr1.tot)
+
+  
+
 #  Check if there is a duplication with Salinas High and MCOE first thing!!!!
+
 joint <- lm.model %>%
     left_join(enrollment.sum.20) %>%
     left_join(lm.predicts) %>%
@@ -236,10 +290,47 @@ joint <- lm.model %>%
     arrange(NAME_LEA21)
 
 
+
+calendar.portion <- tribble(
+  ~year.of.kinder, ~calendar.perc,
+"2020-21"  ,as.numeric(mdy("12/2/2016") - mdy("9/2/2016"))/365, 
+"2021-22"  ,as.numeric(mdy("12/2/2017") - mdy("9/2/2017"))/365, 
+"2022-23"  ,as.numeric(mdy("2/2/2019") - mdy("9/2/2018"))/365, 
+"2023-24"  ,as.numeric(mdy("4/2/2020") - mdy("9/2/2019"))/365,
+"2024-25"  ,as.numeric(mdy("6/2/2021") - mdy("9/2/2020"))/365,
+"2025-26" ,as.numeric(mdy("9/2/2022") - mdy("9/2/2021"))/365,
+)
+
+
+
+alt.joint <- multi.meta %>%
+  left_join(mry.4.proj.slim) %>%
+  left_join(calendar.portion) %>%
+  left_join(enrollment.sum.20.slim) %>%
+  left_join(latest.TK.slim) %>%
+  mutate(est.1gr = round2(county.4yo.2019.perc*latest.1gr.tot*calendar.perc, 0),
+         est.TKactual = round2(county.4yo.2019.perc*latest.tk.tot*calendar.perc * 365/as.numeric(mdy("12/2/2016") - mdy("9/2/2016")), 0),
+         est.zip.births = round2(unlist( unname(prediction))*calendar.perc,0)
+         ) %>%
+  mutate(
+    est.mean = round2( (est.1gr+est.TKactual+est.zip.births)/3 ,0),
+    est.teachers = ceiling( est.mean/12) )
+
+
+alt.joint.shiny <- alt.joint %>%
+  select(NAME_LEA21, Year = year.of.kinder, starts_with("est")) %>%
+  filter(Year >= "2022-23") %>%
+  ungroup()
+
+
+
+
 ss <- "https://docs.google.com/spreadsheets/d/1p5EPFn9zkZGClmYPFC09cin8QzBFS5ZVa9y0O5GO84c/edit#gid=1739770238"
 
 write_sheet(joint, ss = ss)
 write_rds(joint,here("TKestimates","joint.rds"))
+
+write_rds(alt.joint.shiny,here("TKestimates","altjoint.rds"))
 
 write_rds(schools,here("TKestimates","schools.rds"))
 
@@ -249,3 +340,142 @@ write_rds(schools,here("TKestimates","schools.rds"))
 #  
 
 
+
+### EETDG ------
+
+
+cc1 <-  read_csv(here("data","ChildCareCenters02272022.csv"))
+cc2 <- read_csv(here("data","CHILDCAREHOMEmorethan802272022.csv"))
+
+ccs <- rbind(cc1,cc2) 
+
+ccs2 <- ccs %>%
+  filter(`County Name` == "MONTEREY",
+         `Facility Status` != "CLOSED") %>%
+  mutate(preschool = str_detect(`Facility Name`, "PRESCHOOL"),
+         state = str_detect(`Facility Name`, "STATE"),)
+
+write_csv(ccs2, "Monterey List.csv")
+
+
+# https://www.cde.ca.gov/fg/fo/profile.asp?id=5771&recID=5771
+
+mry.allocation <- 1466143
+
+applicants <- c("Salinas City Elementary School District",
+  "Alisal Union Elementary School District",
+  "North Monterey County Unified School District",
+  "Monterey Peninsula Unified School District",
+  "San Ardo Union Elementary School District",
+  "King City Union Elementary School District",
+  "Gonzales Unified School District",
+  "Carmel Unified School District",
+  "Monterey Bay Charter School",
+  "Monterey County Office of Education")
+
+
+# The percentage of TK and K pupils eligible for free and reduced-price meals.
+# The percentage of dual language learners that the LEA is serving or is planning to serve in a CSPP or TK program.
+# The percentage of pupils with disabilities the LEA is serving or planning to serve in an inclusive CSPP or TK program.
+# The percentage of pupils served, or planned to be served in a full day CSPP, TK, or K programs offered by the LEA or community-based organizations.
+# The extent to which applicants operate in an attendance area where a significant disproportionality of particular race or ethnicities, as describes in Section 1418(d) of Title 20 of the United States Code, has been identified in special education.
+# The extent to which the LEA is located in an area that has more than three young children, three to five years of age, inclusive, for every licensed childcare slot.
+# The extent to which applicants plan to partner with community based CSPP and Head Start programs in their program area to ensure those teachers have access to professional development along with teachers employed by the LEA.
+
+
+# 5712 four year olds in 2022 estimate
+
+total <- zip.births.mry %>%
+    filter(year.of.birth == 2018) %>%
+#    filter(NAME_LEA21 %in% applicants) %>%
+    ungroup() %>%
+    mutate(#total = sum(babies),
+           teachers = ceiling(babies/12), 
+           # portion = babies/total,
+           # allocation = portion*mry.allocation,
+           # all.per.teacher = allocation/teachers,
+           mry.portion = babies/6941, # total 2018 county babies 6941
+           mry.allocation = mry.portion*mry.allocation,
+           mry.all.per.teacher = mry.allocation/teachers,
+    ) %>%
+  mutate(short.name = str_sub(NAME_LEA21 ,1,6) %>% str_to_lower() ) 
+  
+
+total.joint <- joint %>%
+ #   filter(year.of.birth == 2018) %>%
+    filter(NAME_LEA21 %in% applicants) %>%
+    ungroup() %>%
+    mutate(total = sum(est.tk23.mean),
+           teachers = ceiling(est.tk23.mean/12), 
+           portion = est.tk23.mean/total,
+           allocation = portion*mry.allocation,
+           all.per.teacher = allocation/teachers,
+           mry.portion = babies/6941,
+           mry.allocation = mry.portion*mry.allocation,
+           mry.all.per.teacher = mry.allocation/teachers,
+    )
+
+# 
+# Tiered system
+# - If use the slots available, ok 
+# - If not use the slots, given into round 2
+# - If use extra slots, initial ones covered and extras put into pull in round 2
+# - Round 2
+# - Cover extras from round 1
+# - If not cover all the extras, funded by priority zip code portionally
+# - If cover all extras, and still have funds, pull in round 3
+# - Round 3 
+# - Available for any educations in priotity areas
+# - Round 4 
+# - Available for any educators in non-priority areas
+
+
+
+TK.eedgt <- TK %>%
+  filter( str_starts(CDS_Code,"27"),
+          Year == max(Year)
+   #       Subgroup == "All"
+  ) %>%
+  select(Year, Name, Subgroup, Total_Kindergarten_Enrollment_Census_Day, Kindergarten_TK_Program_Participation_Census_Day) %>%
+  mutate(k_without_TK = Total_Kindergarten_Enrollment_Census_Day - Kindergarten_TK_Program_Participation_Census_Day) %>%
+  mutate(Subgroup = recode(Subgroup, "Mig" = "MIG")) %>%
+  pivot_wider(names_from = c(Subgroup), values_from = c(Total_Kindergarten_Enrollment_Census_Day, Kindergarten_TK_Program_Participation_Census_Day,k_without_TK )) %>%
+  mutate(perc.EL = k_without_TK_EL/k_without_TK_ALL,
+         perc.SD = k_without_TK_SD/k_without_TK_ALL)
+
+
+
+
+
+cspp <- read_sheet("https://docs.google.com/spreadsheets/d/1JMPrB_Qvvw94rTCdf8u2flP34PP_LJAF-GzG-bulOQg/edit#gid=2114456333")%>%
+  mutate(head_start = str_detect(`Facility Name`, "HEAD") )
+
+
+cspp2 <- cspp %>%
+  filter(CSPP == TRUE,
+         `Facility Type` != "INFANT CENTER") %>%
+  mutate(NAME_LEA21 = `LEA Geographically associated`) %>%
+  select(NAME_LEA21, `Facility Name`,Licensee ,`Facility Capacity`, `Facility City`, `Facility Zip`, `Facility Capacity`, `Facility Type`, head_start) 
+
+
+
+write_rds(cspp2,here("TKestimates","cspp-list.rds"))
+
+cspp3 <- cspp2 %>%
+  group_by(`LEA Geographically associated`) %>%
+  transmute(lea.cspp.capacity = sum(`Facility Capacity`)) %>% 
+  distinct()
+
+
+cspp.w.o.headstart <- cspp2 %>%
+  filter(head_start == FALSE) %>%
+  group_by(`LEA Geographically associated`) %>%
+  transmute(lea.cspp.capacity.excluding.head.start = sum(`Facility Capacity`))%>% 
+  distinct()
+
+
+cspp.sum <- cspp3 %>%
+  left_join(cspp.w.o.headstart) %>%
+  mutate(short.name = str_sub(`LEA Geographically associated` ,1,6) %>% str_to_lower() ) %>%
+  left_join(total) %>%
+  mutate(babies.to.cspp = babies/lea.cspp.capacity)

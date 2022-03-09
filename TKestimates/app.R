@@ -2,10 +2,15 @@
 
 library(shiny)
 library(tidyverse)
+library(DT)
 
 joint <- read_rds("joint.rds")
 
 schools <- read_rds("schools.rds")
+
+altjoint <- read_rds("altjoint.rds")
+
+cspp_list <- read_rds("cspp-list.rds")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -24,14 +29,25 @@ ui <- fluidPage(
         # Main Bofy, in this case text output
 mainPanel(
     p("This estimates the number of TK students that will be enrolled in your school for each of the following four years. It is based on prior TK enrollment, prior 1st grade enrollment and births in zip codes associated with your LEA. If you would like to see the specific calculations, please let me know."),
-               htmlOutput("text"),
-               br(),
+    htmlOutput("text"),
+    p(),
     htmlOutput("sentence2"),
+    p(),
     htmlOutput("zips"),
     p(""),
+    h4("Future TK estimates"),
+    DT::dataTableOutput("altTable"),
+    p(""),
+    h4("Local births"),
+    p("The following graph shows the births in zip codes associated with the district over time."),
     plotOutput("births"),
     p(""),
-    plotOutput("ratio"),
+    h4("Local State Preschool Programs"),
+    p("The following table shows all California State Preschool Programs that are operating in your geographic area.  Please note this also includes head start sites but does not include all preschools nor family child care homes operating in your area."),
+    DT::dataTableOutput("cspp"),
+    p(""),
+    # plotOutput("ratio"),
+    # p(""),
     p(""),
     br(),
     h4("Sources:"),
@@ -65,17 +81,32 @@ server <- function(input, output) {
     })
     
     
+    altjointInput <- reactive({
+        altjoint %>%
+            filter(NAME_LEA21 == input$select) 
+    })
+    
+    
+    csppInput <- reactive({
+        cspp_list %>%
+            filter(NAME_LEA21 == input$select) 
+    })
+    
+    
+    
     output$text <- renderText({
-        joint2 <- jointInput()
+        altjoint2 <- altjointInput()
         
         paste0("<h4>For ",
                input$select,
                " there will be an estimated <b>",
-               joint2 %>%
-                   select(est.tk23.mean) ,
+               altjoint2 %>%
+                   filter(Year == "2022-23") %>%
+                   select(est.mean)  ,
                "</b> students in 2023.  They will require about ",
-               joint2 %>%
-                   select(est.tk23.teachers) ,
+               altjoint2 %>%
+                   filter(Year == "2022-23") %>%
+                   select(est.teachers)  ,
                " teachers.</h4>")
     })
     
@@ -95,18 +126,21 @@ server <- function(input, output) {
     
     
     output$sentence2 <- renderText({
-        joint2 <- jointInput()
+        altjoint2 <- altjointInput()
         
-        paste0("The best estimate used is the average of three estimates.  One estimate is based on the actual number of 2019-20 TK students and changes in county population projections (",
-               joint2 %>%
-                   select(est.tk23.TKactual) ,
-               "), a second estimate is based on 2020-21 first grade cohorts and changes in county population projections (",
-               joint2 %>%
-                   select(est.tk23.county) ,
+        paste0("The best estimate used is the average of three estimates.  One estimate is based on 2020-21 first grade cohorts and changes in county population projections (",
+               altjoint2 %>%
+                   filter(Year == "2022-23") %>%
+                   select(est.1gr) ,
+               ")a second estimate is based on the actual number of 2019-20 TK students and changes in county population projections (",
+               altjoint2 %>%
+                   filter(Year == "2022-23") %>%
+                   select(est.TKactual) ,
+                
                ") and a third estimate is based on the number of births in zip codes associated with the LEA (",
-                              joint2 %>%
-                   select(est.tk23.zip) %>%
-                   unlist(),
+               altjoint2 %>%
+                   filter(Year == "2022-23") %>%
+                   select(est.zip.births) ,
                ").")
     })
     
@@ -126,6 +160,28 @@ server <- function(input, output) {
         
     })
     
+    output$altTable <- DT::renderDataTable({
+        altjoint2 <- altjointInput()
+        
+        ##rename column names to (inside renderDT)
+        colnames(altjoint2) <- c("LEA", "Year", "Estimate from latest 1st Grade Enrollment", "Estimate from latest TK Enrollment", "Estimate from Zip code births", "Mean of estimates", "Estimated teachers needed")
+        
+        DT::datatable(altjoint2, options = list(paging = FALSE, 
+                                           searching = FALSE)) %>%
+            formatStyle('Mean of estimates',  color = 'black', backgroundColor = 'yellow', fontWeight = 'bold')
+    })
+    
+    output$cspp <- DT::renderDataTable({
+        cspp <- csppInput()
+        
+        ##rename column names to (inside renderDT)
+    #    colnames(altjoint2) <- c("LEA", "Year", "Estimate from latest 1st Grade Enrollment", "Estimate from latest TK Enrollment", "Estimate from Zip code births", "Mean of estimates", "Estimated teachers needed")
+        
+        DT::datatable(cspp, options = list(paging = TRUE, 
+                                         searching = TRUE,
+                                           pageLength = 5)) # %>%
+            # formatStyle('Mean of estimates',  color = 'black', backgroundColor = 'yellow', fontWeight = 'bold')
+    })
     
 }
 
