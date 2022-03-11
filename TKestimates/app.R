@@ -3,6 +3,8 @@
 library(shiny)
 library(tidyverse)
 library(DT)
+library(shinyWidgets)
+library(leaflet)
 
 joint <- read_rds("joint.rds")
 

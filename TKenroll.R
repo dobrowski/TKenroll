@@ -8,6 +8,8 @@ library(lubridate)
 library(readxl)
 library(ggthemes)
 library(googlesheets4)
+library(shinyWidgets)
+library(leaflet)
 
 con <- MCOE::mcoe_sql_con()
 
@@ -479,3 +481,5 @@ cspp.sum <- cspp3 %>%
   mutate(short.name = str_sub(`LEA Geographically associated` ,1,6) %>% str_to_lower() ) %>%
   left_join(total) %>%
   mutate(babies.to.cspp = babies/lea.cspp.capacity)
+
+
