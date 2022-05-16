@@ -8,7 +8,6 @@ library(lubridate)
 library(readxl)
 library(ggthemes)
 library(googlesheets4)
-library(shinyWidgets)
 library(leaflet)
 
 con <- MCOE::mcoe_sql_con()
@@ -325,7 +324,7 @@ alt.joint.shiny <- alt.joint %>%
   ungroup()
 
 
-
+write_csv(alt.joint, "joint.csv")
 
 ss <- "https://docs.google.com/spreadsheets/d/1p5EPFn9zkZGClmYPFC09cin8QzBFS5ZVa9y0O5GO84c/edit#gid=1739770238"
 
@@ -483,3 +482,67 @@ cspp.sum <- cspp3 %>%
   mutate(babies.to.cspp = babies/lea.cspp.capacity)
 
 
+### county-wide estimates
+
+mry.4.proj %>%
+    filter(name >= 2022,
+           name <= 2026) %>%
+ggplot( aes(x = name, y = value) ) +
+    geom_col(fill = "blue") +
+    coord_flip(ylim = c(5400, 5800)) +
+    theme_hc() 
+
+
+graph.df <- calendar.portion %>%
+    mutate(name = str_c(20 ,str_sub(year.of.kinder,6,7))) %>%
+    left_join(mry.4.proj) %>%
+    mutate(tks = calendar.perc*value)
+
+
+
+ggplot() +
+    geom_bar(data = graph.df, stat = "identity", position = "identity", width = 0.7, 
+             aes(x = name, y = value, fill = "Total")) +
+    geom_bar(data = graph.df, stat = "identity", position = "identity", width = 0.35, 
+             aes(x = name, y = tks, fill = "TK Eligible")) +
+    geom_text(data = graph.df, stat = "identity", position = "identity", color = "white", 
+             aes(x = name, y = tks - 300, label = label_comma(accuracy = 1)(tks)) )+
+    coord_flip() +
+    theme_minimal() +
+    scale_x_discrete(
+        limits = graph.df$name,
+        expand = c(0, 0.5)
+    ) +
+    scale_fill_manual(
+        guide = "legend",
+        values = c("Total" = "lightblue", "TK Eligible" = "dodgerblue3"),
+        limits = c("Total", "TK Eligible")
+    ) +
+    theme(
+        legend.position = c(1 ,1.05),
+        legend.justification = 1,
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+        legend.key.size = unit(0.7, "lines"),
+        legend.text = element_text(size = 9,
+                                   color = "gray40",
+                                   face = "bold",
+                                   family = "sans"),
+        plot.margin = unit(c(2, 1, 0.4, 1), "lines"),
+        axis.title = element_blank(),
+        axis.text = element_text(
+            size = 10,
+            color = "gray40",
+            face = "bold",
+            family = "sans"),
+        panel.grid.major.x = element_line(
+            color = "grey", 
+            size = 0.3),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank()
+    ) +
+    labs(title = "Total Number of 4-Year-olds in Monterey County \nand those TK Eligible",
+         caption = "From 2023 to 2026, legislation annually expands the range of birthdays for eligiblity.")
+
+
+ggsave("countywide 4 yr old.png", width = 7, height = 5)

@@ -8,7 +8,11 @@ library(tidygeocoder)
 to.geocode <- cspp %>%
     filter(`Facility Type` == "DAY CARE CENTER") %>%
     select(`Facility Name`:`Facility Capacity`,head_start) %>%
-    select(-`County Name`, -`Regional Office`)
+    select(-`County Name`, -`Regional Office`) %>%
+    mutate(across(c(`Facility Name`, `Licensee`, `Facility Administrator`, `Facility Address`, `Facility City`), str_to_title),
+           `Facility Email` = str_to_lower(`Facility Email`))
+
+
 
 
 
@@ -78,7 +82,8 @@ monterey_county <- counties("CA", class = "sf") %>%
 
 districts.mry <- districts %>%
     filter(!str_detect(NAME, "Willow|Shandon|Not|Miguel|Reef|Huron|Pajaro|Aromas|Paso|Coast|Tully|Pleasant|Jefferson|Cien")) %>%
-    select(NAME, STATEFP, INTPTLAT,INTPTLON, geometry) %>%
+    select(NAME, INTPTLAT,INTPTLON, geometry) %>%
+    mutate(County = "Monterey") %>%
     st_intersection(monterey_tracts) %>%
     st_transform(4269) %>%
     st_make_valid()
@@ -116,7 +121,7 @@ tmap_options(check.and.fix = TRUE)
  tmap_mode("view")
  
  tm_shape(districts.mry) +
-     tm_fill("STATEFP", alpha = .5, legend.show = FALSE) +
+     tm_fill("County", alpha = .5, legend.show = FALSE) +
      tm_borders() +
      tm_text("NAME", auto.placement = TRUE) +
     tm_shape(trial) + 
@@ -125,3 +130,16 @@ tmap_options(check.and.fix = TRUE)
  
  
  #  Next steps, put into the shiny app.  
+ 
+ 
+ write_rds(districts.mry,here("TKestimates","districts.rds"))
+ 
+ write_rds(trial,here("TKestimates","trial.rds"))
+
+ 
+ 
+ 
+ to.geocode %>% 
+     filter(str_detect(`LEA Geographically associated`, "Salinas City")) %>%
+     write_csv("Salinas City Child Care Centers.csv")
+ 
